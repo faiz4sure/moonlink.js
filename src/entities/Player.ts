@@ -298,7 +298,6 @@ export class Player {
     this.lastActivityTime = Date.now();
   }
 
-
   public get isActuallyPlaying(): boolean {
     return (this.playing || this.paused) && this.current !== null;
   }
@@ -369,7 +368,6 @@ export class Player {
     return this.node.rest.updatePlayer(this.guildId, finalPayload, noReplace);
   }
 
-
   public async updatePlayer(
     payload: Record<string, any>,
     noReplace?: boolean,
@@ -389,15 +387,6 @@ export class Player {
     this.set("userInitiatedConnect", true);
     if (selfDeaf !== undefined) this.set("selfDeaf", selfDeaf);
     if (selfMute !== undefined) this.set("selfMute", selfMute);
-
-    if (this.voice.isVoiceDataStale() && this.connected) {
-      this.manager.emit(
-        "debug",
-        `Moonlink.js > Player#connect -> Voice data is stale for guild ${this.guildId}. Disconnecting first to obtain fresh credentials.`,
-      );
-      await this.voice.disconnect();
-      await new Promise((resolve) => setTimeout(resolve, 300));
-    }
 
     await this.voice.connect({
       selfDeaf: this.get("selfDeaf") ?? true,

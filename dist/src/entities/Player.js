@@ -268,11 +268,6 @@ class Player {
             this.set("selfDeaf", selfDeaf);
         if (selfMute !== undefined)
             this.set("selfMute", selfMute);
-        if (this.voice.isVoiceDataStale() && this.connected) {
-            this.manager.emit("debug", `Moonlink.js > Player#connect -> Voice data is stale for guild ${this.guildId}. Disconnecting first to obtain fresh credentials.`);
-            await this.voice.disconnect();
-            await new Promise((resolve) => setTimeout(resolve, 300));
-        }
         await this.voice.connect({
             selfDeaf: this.get("selfDeaf") ?? true,
             selfMute: this.get("selfMute") ?? false,
