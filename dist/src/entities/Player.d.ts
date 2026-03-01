@@ -53,6 +53,7 @@ export declare class Player {
     private recoverFromStuck;
     softRestart(reason: string): Promise<boolean>;
     updateActivity(): void;
+    get isActuallyPlaying(): boolean;
     set(key: string, value: unknown): this;
     get<T>(key: string): T | undefined;
     updateData<T>(path?: string, data?: T): Promise<void>;
@@ -60,7 +61,7 @@ export declare class Player {
     private resolveEncodedTrack;
     private sendPlayerUpdate;
     updatePlayer(payload: Record<string, any>, noReplace?: boolean): Promise<any>;
-    connect({ selfDeaf, selfMute }?: {
+    connect({ selfDeaf, selfMute, }?: {
         selfDeaf?: boolean;
         selfMute?: boolean;
     }): Promise<this>;

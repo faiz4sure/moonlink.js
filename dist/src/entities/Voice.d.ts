@@ -7,6 +7,8 @@ interface VoiceEvents {
     disconnect: (err?: Error) => void;
 }
 export declare class Voice extends EventEmitter<VoiceEvents> {
+    private static readonly VOICE_STALE_MS;
+    private static readonly VOICE_RESEND_INTERVAL;
     player: Player;
     state: VoiceConnectionState;
     sessionId: string | null;
@@ -23,9 +25,12 @@ export declare class Voice extends EventEmitter<VoiceEvents> {
     private pendingPlaybackRestoreNonce;
     private moveRestartInFlight;
     private lastMoveAt;
+    private _lastVoiceDataReceivedAt;
+    private _lastVoiceUpdateSentAt;
     constructor(player: Player);
     get manager(): import("../..").Manager;
     wasRecentlyMoved(windowMs?: number): boolean;
+    isVoiceDataStale(): boolean;
     private setState;
     connect(options: {
         selfDeaf: boolean;

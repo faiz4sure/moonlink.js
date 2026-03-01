@@ -49,12 +49,18 @@ class Player {
         this.guildId = config.guildId;
         this.voiceChannelId = config.voiceChannelId;
         this.textChannelId = config.textChannelId || config.voiceChannelId;
-        this.volume = config.volume ?? this.manager.options.defaultPlayer?.volume ?? 100;
+        this.volume =
+            config.volume ?? this.manager.options.defaultPlayer?.volume ?? 100;
         this.set("selfDeaf", config.selfDeaf ?? this.manager.options.defaultPlayer?.selfDeaf ?? true);
         this.set("selfMute", config.selfMute ?? this.manager.options.defaultPlayer?.selfMute ?? false);
-        this.autoPlay = config.autoPlay ?? this.manager.options.defaultPlayer?.autoPlay ?? false;
-        this.autoLeave = config.autoLeave ?? this.manager.options.defaultPlayer?.autoLeave ?? false;
-        this.loop = config.loop ?? this.manager.options.defaultPlayer?.loop ?? "off";
+        this.autoPlay =
+            config.autoPlay ?? this.manager.options.defaultPlayer?.autoPlay ?? false;
+        this.autoLeave =
+            config.autoLeave ??
+                this.manager.options.defaultPlayer?.autoLeave ??
+                false;
+        this.loop =
+            config.loop ?? this.manager.options.defaultPlayer?.loop ?? "off";
         this.loopCount = config.loopCount;
         this.historySize = this.manager.options.defaultPlayer?.historySize ?? 10;
         this.queue = new (Util_1.Structure.get("Queue"))(this);
@@ -103,9 +109,11 @@ class Player {
                 this.stuckDetectionCount = 0;
             }
             const activityDelta = now - this.lastActivityTime;
-            if (activityDelta > silenceTimeout) {
+            const trackStartedAt = this.get("trackStartedAt") ?? now;
+            const playingDuration = now - trackStartedAt;
+            if (activityDelta > silenceTimeout && playingDuration > silenceTimeout) {
                 this.silentDetectionCount++;
-                this.manager.emit("debug", `Moonlink.js > Player#healthCheck >> Player ${this.guildId} silent for ${Math.round(activityDelta / 1000)}s. Silent count: ${this.silentDetectionCount}/${maxSilentCount}`);
+                this.manager.emit("debug", `Moonlink.js > Player#healthCheck >> Player ${this.guildId} silent for ${Math.round(activityDelta / 1000)}s (playing for ${Math.round(playingDuration / 1000)}s). Silent count: ${this.silentDetectionCount}/${maxSilentCount}`);
                 if (this.silentDetectionCount >= maxSilentCount) {
                     this.manager.emit("debug", `Moonlink.js > Player#healthCheck >> Player ${this.guildId} silent for too long, attempting soft restart.`);
                     await this.softRestart("Silent player detected");
@@ -114,6 +122,9 @@ class Player {
                 }
             }
             else {
+                if (this.silentDetectionCount > 0) {
+                    this.manager.emit("debug", `Moonlink.js > Player#healthCheck >> Player ${this.guildId} silence counter reset (activityDelta=${Math.round(activityDelta / 1000)}s, playingDuration=${Math.round(playingDuration / 1000)}s).`);
+                }
                 this.silentDetectionCount = 0;
             }
             this.lastPosition = currentPosition;
@@ -158,12 +169,12 @@ class Player {
         }
         try {
             await this.stop();
-            await new Promise(resolve => setTimeout(resolve, 500));
+            await new Promise((resolve) => setTimeout(resolve, 500));
             if (this.voice.sessionId && this.voice.token && this.voice.endpoint) {
                 const voicePayload = {
                     sessionId: this.voice.sessionId,
                     token: this.voice.token,
-                    endpoint: this.voice.endpoint
+                    endpoint: this.voice.endpoint,
                 };
                 if (this.node.isNodeLink) {
                     voicePayload.channelId = this.voiceChannelId;
@@ -174,7 +185,7 @@ class Player {
             await this.play({
                 track: currentTrack,
                 position: currentPosition,
-                noReplace: false
+                noReplace: false,
             });
             if (wasPaused) {
                 await this.pause();
@@ -195,6 +206,9 @@ class Player {
     updateActivity() {
         this.lastActivityTime = Date.now();
     }
+    get isActuallyPlaying() {
+        return (this.playing || this.paused) && this.current !== null;
+    }
     set(key, value) {
         this.data[key] = value;
         return this;
@@ -203,7 +217,7 @@ class Player {
         return this.data[key];
     }
     async updateData(path, data) {
-        const dbPath = `players.${this.guildId}${path ? `.${path}` : ''}`;
+        const dbPath = `players.${this.guildId}${path ? `.${path}` : ""}`;
         await this.manager.database.set(dbPath, data);
     }
     assertNodeLinkFeature(feature) {
@@ -230,7 +244,10 @@ class Player {
         const finalPayload = { ...payload };
         if (payload.voice) {
             const voicePayload = { ...payload.voice };
-            if (this.node.isNodeLink && (!voicePayload.sessionId || !voicePayload.token || !voicePayload.endpoint)) {
+            if (this.node.isNodeLink &&
+                (!voicePayload.sessionId ||
+                    !voicePayload.token ||
+                    !voicePayload.endpoint)) {
                 throw new Error("voice payload requires sessionId, token, and endpoint.");
             }
             if (this.node.isNodeLink && !voicePayload.channelId) {
@@ -243,7 +260,7 @@ class Player {
     async updatePlayer(payload, noReplace) {
         return this.sendPlayerUpdate(payload, noReplace);
     }
-    async connect({ selfDeaf, selfMute } = {}) {
+    async connect({ selfDeaf, selfMute, } = {}) {
         const connectStack = new Error().stack?.split("\n").slice(2, 8).join("\n");
         this.manager.emit("debug", `Moonlink.js > Player#connect -> Connect requested for guild ${this.guildId}. Stack: ${connectStack || "unavailable"}`);
         this.set("userInitiatedConnect", true);
@@ -251,11 +268,22 @@ class Player {
             this.set("selfDeaf", selfDeaf);
         if (selfMute !== undefined)
             this.set("selfMute", selfMute);
-        await this.voice.connect({ selfDeaf: this.get("selfDeaf") ?? true, selfMute: this.get("selfMute") ?? false });
+        if (this.voice.isVoiceDataStale() && this.connected) {
+            this.manager.emit("debug", `Moonlink.js > Player#connect -> Voice data is stale for guild ${this.guildId}. Disconnecting first to obtain fresh credentials.`);
+            await this.voice.disconnect();
+            await new Promise((resolve) => setTimeout(resolve, 300));
+        }
+        await this.voice.connect({
+            selfDeaf: this.get("selfDeaf") ?? true,
+            selfMute: this.get("selfMute") ?? false,
+        });
         return this;
     }
     async disconnect() {
-        const disconnectStack = new Error().stack?.split("\n").slice(2, 8).join("\n");
+        const disconnectStack = new Error().stack
+            ?.split("\n")
+            .slice(2, 8)
+            .join("\n");
         this.manager.emit("debug", `Moonlink.js > Player#disconnect -> Disconnect requested for guild ${this.guildId}. Stack: ${disconnectStack || "unavailable"}`);
         this.set("userInitiatedConnect", false);
         await this.voice.disconnect();
@@ -266,7 +294,7 @@ class Player {
         if (options instanceof Track_1.Track) {
             finalOptions = { track: options };
         }
-        else if ('encoded' in options && 'info' in options) {
+        else if ("encoded" in options && "info" in options) {
             finalOptions = { track: options };
         }
         else {
@@ -320,9 +348,13 @@ class Player {
             return false;
         }
         const oldTrackTitle = this.current?.title ?? "null";
-        this.current = nextTrack instanceof Track_1.Track ? nextTrack : new Track_1.Track(nextTrack);
+        this.current =
+            nextTrack instanceof Track_1.Track ? nextTrack : new Track_1.Track(nextTrack);
         this.current.position = finalOptions.position || 0;
-        this.updateData("current", { encoded: this.current.encoded, requester: this.current.requester });
+        this.updateData("current", {
+            encoded: this.current.encoded,
+            requester: this.current.requester,
+        });
         this.manager.emit("debug", `Moonlink.js > Player#play >> Player state changed: current track: ${oldTrackTitle} -> ${this.current.title}`);
         const oldPlaying = this.playing;
         const oldPaused = this.paused;
@@ -334,7 +366,7 @@ class Player {
         const payload = {
             track: {
                 encoded: this.current.encoded,
-                userData: this.current.userData
+                userData: this.current.userData,
             },
             position: finalOptions.position || this.current.position,
         };
@@ -368,7 +400,10 @@ class Player {
             if (this.previous.length > historyLimit) {
                 this.previous.shift();
             }
-            this.updateData("previous", this.previous.map(t => ({ encoded: t.encoded, requester: t.requester })));
+            this.updateData("previous", this.previous.map((t) => ({
+                encoded: t.encoded,
+                requester: t.requester,
+            })));
             this.manager.emit("debug", `Moonlink.js > Player#play << Added track "${previousTrack.title}" to history for guild ${this.guildId}. History size: ${this.previous.length}`);
         }
         this.set("isBackPlay", false);
@@ -382,7 +417,7 @@ class Player {
         const encoded = this.resolveEncodedTrack(track);
         return this.node.rest.addMixLayer(this.guildId, {
             track: { encoded, userData: options?.userData },
-            volume: options?.volume
+            volume: options?.volume,
         });
     }
     async getMixes() {
@@ -569,7 +604,7 @@ class Player {
         return this.manager.search({
             query,
             source,
-            node: this.node.identifier
+            node: this.node.identifier,
         });
     }
     async stop() {
@@ -597,7 +632,9 @@ class Player {
                 return false;
             }
             this.manager.emit("playerTriggeredSkip", this, oldTrack, track, position);
-            return await this.play({ track: track instanceof Track_1.Track ? track : new Track_1.Track(track) });
+            return await this.play({
+                track: track instanceof Track_1.Track ? track : new Track_1.Track(track),
+            });
         }
         if (!this.queue.size) {
             if (this.autoPlay) {
@@ -731,7 +768,7 @@ class Player {
                 sessionId: this.voice.sessionId,
                 token: this.voice.token,
                 endpoint: this.voice.endpoint,
-                ...(this.node.isNodeLink ? { channelId: this.voiceChannelId } : {})
+                ...(this.node.isNodeLink ? { channelId: this.voiceChannelId } : {}),
             }
             : null;
         if (voicePayload) {
@@ -748,7 +785,10 @@ class Player {
             this.playing = true;
             this.paused = false;
             const payload = {
-                track: { encoded: this.current.encoded, userData: this.current.userData },
+                track: {
+                    encoded: this.current.encoded,
+                    userData: this.current.userData,
+                },
                 volume: this.volume,
             };
             if (resumePosition > 0 && this.current.isSeekable) {
@@ -786,7 +826,9 @@ class Player {
     }
     async transferNode(node) {
         const targetNode = typeof node === "string" ? this.manager.nodes.get(node) : node;
-        if (!targetNode || !targetNode.connected || targetNode.identifier === this.node.identifier) {
+        if (!targetNode ||
+            !targetNode.connected ||
+            targetNode.identifier === this.node.identifier) {
             this.manager.emit("debug", `Moonlink.js > Player#transferNode >> Invalid target node for guild ${this.guildId}`);
             return false;
         }
@@ -860,7 +902,7 @@ class Player {
         this.set("isBackPlay", true);
         const played = await this.play({
             track: this.current,
-            position: 0
+            position: 0,
         });
         if (played) {
             this.manager.emit("playerTriggeredBack", this, lastTrack);
