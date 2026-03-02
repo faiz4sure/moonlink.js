@@ -4,7 +4,6 @@ exports.Voice = void 0;
 const types_1 = require("../typings/types");
 const Util_1 = require("../Util");
 class Voice extends Util_1.EventEmitter {
-    static VOICE_STALE_MS = 4 * 60 * 60 * 1000;
     static VOICE_RESEND_INTERVAL = 30 * 60 * 1000;
     player;
     state = types_1.VoiceConnectionState.DISCONNECTED;
@@ -22,7 +21,6 @@ class Voice extends Util_1.EventEmitter {
     pendingPlaybackRestoreNonce = null;
     moveRestartInFlight = false;
     lastMoveAt = 0;
-    _lastVoiceDataReceivedAt = 0;
     _lastVoiceUpdateSentAt = 0;
     constructor(player) {
         super();
@@ -37,10 +35,13 @@ class Voice extends Util_1.EventEmitter {
     wasRecentlyMoved(windowMs = 8000) {
         return Date.now() - this.lastMoveAt <= windowMs;
     }
-    isVoiceDataStale() {
-        if (!this._lastVoiceDataReceivedAt)
-            return true;
-        return Date.now() - this._lastVoiceDataReceivedAt > Voice.VOICE_STALE_MS;
+    forceResyncCredentials() {
+        if (!this.sessionId || !this.token || !this.endpoint)
+            return false;
+        this._lastVoiceUpdateSentAt = 0;
+        this.lastVoiceUpdate = null;
+        this.checkCompletion();
+        return true;
     }
     setState(state) {
         if (this.state === state)
@@ -64,8 +65,7 @@ class Voice extends Util_1.EventEmitter {
         if (this.state === types_1.VoiceConnectionState.CONNECTED &&
             this.sessionId &&
             this.token &&
-            this.endpoint &&
-            !this.isVoiceDataStale()) {
+            this.endpoint) {
             return Promise.resolve();
         }
         if (this.state === types_1.VoiceConnectionState.CONNECTED) {
@@ -191,7 +191,6 @@ class Voice extends Util_1.EventEmitter {
             this.setState(types_1.VoiceConnectionState.DISCONNECTED);
             if (data.session_id) {
                 this.sessionId = data.session_id;
-                this._lastVoiceDataReceivedAt = Date.now();
             }
             this.checkCompletion();
             this.player.stuckDetectionCount = 0;
@@ -202,7 +201,6 @@ class Voice extends Util_1.EventEmitter {
         this.player.voiceChannelId = data.channel_id;
         if (data.session_id) {
             this.sessionId = data.session_id;
-            this._lastVoiceDataReceivedAt = Date.now();
         }
         this.checkCompletion();
     }
@@ -211,7 +209,6 @@ class Voice extends Util_1.EventEmitter {
             return;
         this.token = data.token;
         this.endpoint = data.endpoint;
-        this._lastVoiceDataReceivedAt = Date.now();
         this.checkCompletion();
     }
     check(connected) {

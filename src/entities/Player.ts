@@ -457,6 +457,8 @@ export class Player {
         );
         return false;
       }
+    } else {
+      this.voice.forceResyncCredentials();
     }
 
     let track = finalOptions.track;

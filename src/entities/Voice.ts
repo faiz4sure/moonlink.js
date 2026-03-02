@@ -13,8 +13,6 @@ interface VoiceEvents {
 }
 
 export class Voice extends EventEmitter<VoiceEvents> {
-  private static readonly VOICE_STALE_MS = 4 * 60 * 60 * 1000;
-
   private static readonly VOICE_RESEND_INTERVAL = 30 * 60 * 1000;
 
   public player: Player;
@@ -41,8 +39,6 @@ export class Voice extends EventEmitter<VoiceEvents> {
   private moveRestartInFlight: boolean = false;
   private lastMoveAt: number = 0;
 
-  private _lastVoiceDataReceivedAt: number = 0;
-
   private _lastVoiceUpdateSentAt: number = 0;
 
   constructor(player: Player) {
@@ -61,9 +57,12 @@ export class Voice extends EventEmitter<VoiceEvents> {
     return Date.now() - this.lastMoveAt <= windowMs;
   }
 
-  public isVoiceDataStale(): boolean {
-    if (!this._lastVoiceDataReceivedAt) return true;
-    return Date.now() - this._lastVoiceDataReceivedAt > Voice.VOICE_STALE_MS;
+  public forceResyncCredentials(): boolean {
+    if (!this.sessionId || !this.token || !this.endpoint) return false;
+    this._lastVoiceUpdateSentAt = 0;
+    this.lastVoiceUpdate = null;
+    this.checkCompletion();
+    return true;
   }
 
   private setState(state: VoiceConnectionState) {
@@ -92,13 +91,11 @@ export class Voice extends EventEmitter<VoiceEvents> {
       return Promise.resolve();
     }
 
-
     if (
       this.state === VoiceConnectionState.CONNECTED &&
       this.sessionId &&
       this.token &&
-      this.endpoint &&
-      !this.isVoiceDataStale()
+      this.endpoint
     ) {
       return Promise.resolve();
     }
@@ -263,7 +260,6 @@ export class Voice extends EventEmitter<VoiceEvents> {
       this.setState(VoiceConnectionState.DISCONNECTED);
       if (data.session_id) {
         this.sessionId = data.session_id;
-        this._lastVoiceDataReceivedAt = Date.now();
       }
 
       this.checkCompletion();
@@ -277,7 +273,6 @@ export class Voice extends EventEmitter<VoiceEvents> {
     this.player.voiceChannelId = data.channel_id;
     if (data.session_id) {
       this.sessionId = data.session_id;
-      this._lastVoiceDataReceivedAt = Date.now();
     }
 
     this.checkCompletion();
@@ -288,7 +283,6 @@ export class Voice extends EventEmitter<VoiceEvents> {
 
     this.token = data.token;
     this.endpoint = data.endpoint;
-    this._lastVoiceDataReceivedAt = Date.now();
     this.checkCompletion();
   }
 
